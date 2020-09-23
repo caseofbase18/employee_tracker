@@ -24,57 +24,61 @@ function promptUser() {
             updateEmpManager();
         } else if (response.choice == options[7]) {
             connection.end();
+            console.table("And you're done!");
         }
     });
 };
 
 function viewEmployees() {
-    connection.query("SELECT * FROM employee", function (error, results) {
-        console.table(results);
-        connection.end();
+    connection.query(`SELECT employee.id, employee.first_name, employee.last_name, role.title, department.name AS department, role.salary,
+    CONCAT (E2.first_name, ' ', E2.last_name) AS manager_name FROM employee	
+    INNER JOIN role ON role.id = employee.role_id 
+    INNER JOIN department ON department.id = role.department_id
+    LEFT JOIN employee AS E2 ON E2.id = employee.manager_id;`, (err, results) => {
+        if (err) {
+            connection.end();
+        } else {
+            console.table(results);
+            promptUser();
+        }
     });
-};
+}
 
 function viewEmpDepartment() {
-    connection.query("SELECT * FROM department", function (error, results) {
+    connection.query("SELECT * FROM department", (err, results) => {
         let deptArray = [];
         for (let i = 0; i < results.length; i++) {
             let department = {
                 name: results[i].name,
                 value: results[i].id
-            }
+            };
             deptArray.push(department);
         }
-        console.log(deptArray);
         inquirer.prompt([
-            { type: "list", message: "Choose a department to see its employees:", choices: deptArray, name: "choice" }
+            { name: "choice", message: "Choose a department to see its employees:", choices: deptArray, type: "list" }
         ]).then(response => {
-            connection.query("SELECT employee.id, employee.first_name, employee.last_name, employee.manager_id, role.title FROM employee LEFT JOIN role ON employee.role_id = role.id LEFT JOIN department ON role.department_id = department.id WHERE department.id = ?", response.choice, function (error, results) {
+            connection.query("SELECT employee.id, employee.first_name, employee.last_name, employee.manager_id, role.title FROM employee LEFT JOIN role ON employee.role_id = role.id LEFT JOIN department ON role.department_id = department.id WHERE department.id = ?", response.choice, (err, results) => {
                 console.table(results);
-                connection.end();
+                promptUser();
             });
         });
     });
 };
 
-
 function viewEmpManager() {
-    connection.query("SELECT * FROM employee", function (error, results) {
-        let empArray = [];
-        for (let i = 0; i < results.length; i++) {
-            let manager = {
-                name: results[i].name,
-                value: results[i].id
-            }
-            empArray.push(manager);
-        }
-        console.log(empArray);
+    connection.query("SELECT * FROM employee", function () {
         inquirer.prompt([
-            { type: "list", message: "Choose a manager's id to see their employees:", choices: empArray, name: "choice" }
-        ]).then(response => {
-            connection.query("SELECT employee.manager_id FROM employee", response.choice, function (error, results) {
-                console.table(results);
-                connection.end();
+            { name: "manager_id", message: "Enter a manager's id to see their employees:", type: "input" }
+        ]).then(answer => {
+            connection.query("SELECT * FROM employee WHERE manager_id = ?;", [answer.manager_id], (err, results) => {
+                if (err) throw err;
+                if (err) {
+                    console.table("Ooops! Time for a do-over!");
+                    connection.end();
+                } else {
+                    console.table(results);
+                    promptUser();
+                }
             });
         });
     });
@@ -86,7 +90,7 @@ function addEmployee() {
         { name: "last_name", message: "What is the employee's last name?", type: "input" },
         { name: "manager_id", message: "What is the employee's manager id?", type: "input" },
         { name: "role_id", message: "What is the employee's role id?", type: "input" },
-    ]).then(function (answer) {
+    ]).then((answer) => {
         connection.query(
             "INSERT INTO employee SET ?",
             {
@@ -95,10 +99,11 @@ function addEmployee() {
                 manager_id: answer.manager_id,
                 role_id: answer.role_id
             },
-            function (err) {
-                if (err) throw err;
+            (err) => {
+                if (err)
+                    throw err;
                 console.table("Employee added");
-                connection.end();
+                promptUser();
             }
         );
     });
@@ -106,23 +111,17 @@ function addEmployee() {
 
 function removeEmployee() {
     inquirer.prompt([
-        { name: "first_name", message: "What is the employee's first name?", type: "input" },
-        { name: "last_name", message: "What is the employee's last name?", type: "input" },
-        { name: "manager_id", message: "What is the employee's manager id?", type: "input" },
-        { name: "role_id", message: "What is the employee's role id?", type: "input" },
-    ]).then(function (answer) {
-        connection.query(
-            "DELETE FROM employee WHERE ?",
+        { name: "id", message: "What is the employee's id number?", type: "input" }
+    ]).then((answer) => {
+        connection.query(`DELETE FROM employee WHERE ?`,
             {
-                first_name: answer.first_name,
-                last_name: answer.last_name,
-                manager_id: answer.manager_id,
-                role_id: answer.role_id
+                id: answer.id
             },
-            function (err) {
-                if (err) throw err;
-                console.log("Employee removed");
-                connection.end();
+            (err) => {
+                if (err)
+                    throw err;
+                console.table(`Employee removed`);
+                promptUser();
             }
         );
     });
@@ -130,52 +129,54 @@ function removeEmployee() {
 
 function updateEmpRole() {
     console.log("Update employee role here");
-    inquirer.prompt([
-        { name: "id", message: "What is the employee's id?", type: "input" },
-        { name: "title", message: "What is the employee's title?", type: "input" },
-        { name: "salary", message: "What is the employee's salary?", type: "input" },
-        { name: "department_id", message: "What is the employee's department id?", type: "input" },
-    ]).then(function (answer) {
-        connection.query(
-            "UPDATE department WHERE ?",
-            {
-                id: answer.id,
-                title: answer.title,
-                salary: answer.salary,
-                department_id: answer.department_id
-            },
-            function (err) {
-                if (err) throw err;
-                console.log("Employee role updated");
-                connection.end();
-            }
-        );
+    connection.query(`SELECT employee.id, employee.first_name, employee.last_name, role_id, role.title, department.name AS department FROM employee	
+    INNER JOIN role ON role.id = employee.role_id INNER JOIN department ON department.id = role.department_id;`, (err, results) => {
+        if (err) throw err;
+        if (err) {
+            connection.end();
+        } else {
+            console.table(results);
+
+            inquirer.prompt([
+                { name: "id", message: "What is the employee's id number?", type: "input" },
+                { name: "role_id", message: "What is the employee's new role id?", type: "input" }
+            ]).then(function (answer) {
+                connection.query(
+                    `UPDATE employee SET role_id = ? WHERE id = ?`, [answer.role_id, answer.id], (err) => {
+                        if (err) throw err;
+                        if (err) {
+                            console.table("Ooops! Time for a do-over!");
+                            connection.end();
+                        } else {
+                            console.log("Employee role updated");
+                            promptUser();
+                        }
+                    })
+            })
+        }
     });
 };
 
 function updateEmpManager() {
     console.log("Here is where you update your employee's manager")
     inquirer.prompt([
-        { name: "first_name", message: "What is the employee's first name?", type: "input" },
-        { name: "last_name", message: "What is the employee's last name?", type: "input" },
-        { name: "manager_id", message: "Who is the employee's new manager by id?", type: "input" }
-    ]).then(function(answer){
+        { name: "manager_id", message: "What is the manager's id number?", type: "input" },
+        { name: "id", message: "What is the employee's id number?", type: "input" },
+    ]).then(function (answer) {
         connection.query(
-            "UPDATE employee WHERE ?",
-            {
-                first_name: answer.first_name,
-                last_name: answer.last_name,
-                manager_id: answer.manager_id,
-            },
-            function (err) {
+            `UPDATE employee SET manager_id = ? WHERE id = ?;`, [answer.manager_id, answer.id],
+            (err) => {
                 if (err) throw err;
-                console.table("Employee's manager updated");
-                connection.end();
+                if (err) {
+                    console.table(err);
+                } else {
+                    console.table("Employee manager updated");
+                    promptUser();
+                }
             }
         );
     });
- };
-
+};
 
 promptUser();
 
